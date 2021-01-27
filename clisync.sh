@@ -40,18 +40,18 @@ flag|h|help|show usage
 flag|q|quiet|no output
 flag|v|verbose|output more
 flag|f|force|do not ask for confirmation (always yes)
-
+flag|n|notify|send notification when successful
+flag|w|nowarning|don't send notification upon error
 option|l|log_dir|folder for log files |$HOME/log/$script_prefix
 option|t|tmp_dir|folder for temp files|.tmp
-option|w|width|width to use|800
-
-list|u|user|user(s) to execute this for
-
-secret|p|password|password to use
-
-param|1|action|action to perform: analyze/convert
-param|?|input|input file
-param|?|output|output file
+option|g|cfg_dir|folder for mc config files|$HOME/.mc
+option|c|copy|keep copy of files (no/backup/mirror)|mirror
+option|d|daily|number of daily backups to keep (0-7)|0
+option|w|weekly|number of weekly backup to keep (0-4)|0
+option|m|monthly|number of monthly backups to keep (0-12)|0
+param|1|action|action to perform: check/backup/restore/list/destination
+param|?|source|source folder
+param|?|destination|destination folder (use -h for examples)
 " |
     grep -v '^#' |
     grep -v '^\s*$'
@@ -67,7 +67,8 @@ list_dependencies() {
   #progressbar|basher install pforret/progressbar
   echo -n "
 gawk
-curl
+mc
+jq
 " |
     grep -v "^#" |
     sort
@@ -89,11 +90,18 @@ main() {
     do_check
     ;;
 
-  analyze)
-    #TIP: use «$script_prefix analyze» to analyze an input file
-    #TIP:> $script_prefix analyze input.txt
+  destination)
+    #TIP: use «$script_prefix destination» to add new S3 destination to mc (minio client)
+    #TIP:> $script_prefix destination
     # shellcheck disable=SC2154
-    do_analyze "$input"
+    add_destination
+    ;;
+
+  backup)
+    #TIP: use «$script_prefix backup» to backup a folder tree
+    #TIP:> $script_prefix backup /var/data/archive s3linode8/data
+    # shellcheck disable=SC2154
+    do_backup "$source" "$destination"
     ;;
 
   convert)
@@ -115,6 +123,35 @@ main() {
 #####################################################################
 ## Put your helper scripts here
 #####################################################################
+
+list_aliases(){
+  mc alias list --json | jq .alias |  sed 's/"//g' | sort | xargs
+}
+
+add_destination(){
+  existing=$(list_aliases)
+  local alias
+  local endpoint
+  local access_key
+  local secret_key
+
+  out "Examples of valid endpoints are:"
+  out "- https://s3.amazonaws.com https://s3.eu-west-1.amazonaws.com (Amazon AWS S3)"
+  out "- https://nyc3.digitaloceanspaces.com https://ams3.digitaloceanspaces.com (DigitalOcean Spaces)"
+  out "- https://us-east-1.linodeobjects.com https://eu-central-1.linodeobjects.com (Linode Object Storage)"
+  out "- https://s3.us-west-001.backblazeb2.com https://s3.eu-central-001.backblazeb2.com (Backblaze Cloud Storage)"
+  ask endpoint "Give S3 compatible endpoint" "https://s3.amazonaws.com"
+  ask access_key "Give access key" ""
+  ask secret_key "Give private key" ""
+  announce "Existing names here: $existing"
+  # shellcheck disable=SC2001
+  endname=$(echo "${endpoint/.com/}" | sed 's#.#/#g')
+  ask alias "Give unique alias for this storage alias" "$(basename "${endname}")"
+
+  confirm "Create new cloud storage: $alias - $endpoint ?" && mc alias set "$alias" "$endpoint" "$access_key" "$secret_key"
+  success "List of storage accounts is now: $(list_aliases)"
+
+}
 
 do_analyze() {
   log_to_file "Analyze [$input]"
@@ -160,6 +197,8 @@ do_check(){
         eval "echo -n \"$name=\\\"\${$name:-}\\\"  \""
       done
     echo " "
+
+    out "$char_succ Storage aliases   : $(list_aliases)"
 }
 
 #####################################################################
@@ -323,7 +362,7 @@ is_dir() { [[ -d "$1" ]]; }
 show_usage() {
   out "Program: ${col_grn}$script_basename $script_version${col_reset} by ${col_ylw}$script_author${col_reset}"
   out "Updated: ${col_grn}$script_modified${col_reset}"
-  out "Description: Backup to local disks/S3 cloud storage with daily/weekly/monthly (CLI bash)"
+  out "Description: Backup to local disks/S3 cloud storage with daily/weekly/monthly schedule"
   echo -n "Usage: $script_basename"
   list_options |
     awk '
