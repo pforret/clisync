@@ -124,8 +124,13 @@ main() {
 ## Put your helper scripts here
 #####################################################################
 
+do_mc(){
+  # shellcheck disable=SC2154
+  mc --no-color --quiet --config-dir "$cfg_dir" "$@"
+}
+
 list_aliases(){
-  mc alias list --json | jq .alias |  sed 's/"//g' | sort | xargs
+  do_mc alias list --json | jq .alias |  sed 's/"//g' | sort | xargs
 }
 
 add_destination(){
@@ -148,7 +153,7 @@ add_destination(){
   endname=$(echo "${endpoint/.com/}" | sed 's#.#/#g')
   ask alias "Give unique alias for this storage alias" "$(basename "${endname}")"
 
-  confirm "Create new cloud storage: $alias - $endpoint ?" && mc alias set "$alias" "$endpoint" "$access_key" "$secret_key"
+  confirm "Create new cloud storage: $alias - $endpoint ?" && do_mc alias set "$alias" "$endpoint" "$access_key" "$secret_key"
   success "List of storage accounts is now: $(list_aliases)"
 
 }
@@ -182,13 +187,15 @@ do_check(){
       done
     echo " "
 
-    echo -n "$char_succ Check arrays      : "
-    list_options | grep 'list|' | cut -d'|' -f3 | sort |
-      while read -r name; do
-        [[ -z "$name" ]] && continue
-        eval "echo -n \"$name=(\${${name}[@]})  \""
-      done
-    echo " "
+    if list_options | grep -q 'list|'; then
+      echo -n "$char_succ Check arrays      : "
+      list_options | grep 'list|' | cut -d'|' -f3 | sort |
+        while read -r name; do
+          [[ -z "$name" ]] && continue
+          eval "echo -n \"$name=(\${${name}[@]})  \""
+        done
+      echo " "
+    fi
 
     echo -n "$char_succ Check parameters  : "
     list_options | grep 'param|' | cut -d'|' -f3 | sort |
