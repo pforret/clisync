@@ -57,23 +57,6 @@ param|?|destination|destination folder (use -h for examples)
     grep -v '^\s*$'
 }
 
-list_dependencies() {
-  ### Change the next lines to reflect which binaries(programs) or scripts are necessary to run this script
-  # Example 1: a regular package that should be installed with apt/brew/yum/...
-  #curl
-  # Example 2: a program that should be installed with apt/brew/yum/... through a package with a different name
-  #convert|imagemagick
-  # Example 3: a package with its own package manager: basher (shell), go get (golang), cargo (Rust)...
-  #progressbar|basher install pforret/progressbar
-  echo -n "
-gawk
-mc
-jq
-" |
-    grep -v "^#" |
-    sort
-}
-
 #####################################################################
 ## Put your main script here
 #####################################################################
@@ -169,8 +152,7 @@ do_convert() {
 }
 
 do_check(){
-    echo -n "$char_succ Check dependencies: "
-    list_dependencies | cut -d'|' -f1 | sort | xargs
+
     echo -n "$char_succ Check flags       : "
     list_options | grep 'flag|' | cut -d'|' -f3 | sort |
       while read -r name; do
@@ -560,34 +542,21 @@ parse_options() {
   fi
 }
 
-require_binaries() {
-  local required_binary
-  local install_instructions
-
-  while read -r line; do
-    required_binary=$(echo "$line" | cut -d'|' -f1)
-    [[ -z "$required_binary" ]] && continue
-    # shellcheck disable=SC2230
-    path_binary=$(which "$required_binary" 2>/dev/null)
-    [[ -n "$path_binary" ]] && debug "️$require_icon required [$required_binary] -> $path_binary"
-    [[ -n "$path_binary" ]] && continue
-    required_package=$(echo "$line" | cut -d'|' -f2)
-    if [[ $(echo "$required_package" | wc -w) -gt 1 ]]; then
-      # example: setver|basher install setver
-      install_instructions="$required_package"
-    else
-      [[ -z "$required_package" ]] && required_package="$required_binary"
-      if [[ -n "$install_package" ]]; then
-        install_instructions="$install_package $required_package"
-      else
-        install_instructions="(install $required_package with your package manager)"
-      fi
-    fi
-    alert "$script_basename needs [$required_binary] but it cannot be found"
-    alert "1) install package  : $install_instructions"
-    alert "2) check path       : export PATH=\"[path of your binary]:\$PATH\""
-    die "Missing program/script [$required_binary]"
-  done < <(list_dependencies)
+require_binary(){
+  binary="$1"
+  path_binary=$(which "$binary" 2>/dev/null)
+  [[ -n "$path_binary" ]] && debug "️$require_icon required [$binary] -> $path_binary" && return 0
+  #
+  words=$(echo "${2:-}" | wc -l)
+  case $words in
+    0)  install_instructions="$install_package $1";;
+    1)  install_instructions="$install_package $2";;
+    *)  install_instructions="$2"
+  esac
+  alert "$script_basename needs [$binary] but it cannot be found"
+  alert "1) install package  : $install_instructions"
+  alert "2) check path       : export PATH=\"[path of your binary]:\$PATH\""
+  die   "Missing program/script [$binary]"
 }
 
 folder_prep() {
